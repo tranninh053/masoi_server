@@ -1,0 +1,26 @@
+{
+  "name": "ma_soi_server",
+  "version": "1.0.0",
+  "description": "Ma sói server",
+  "main": "index.js",
+  "author": "NinhTD",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "dev": "nodemon --exec ts-node ./src/server.ts",
+    "start": "nodemon ./dist/server.js",
+    "prod": "npm run build && npm run start",
+    "postinstall": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "ws": "^7.1.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.0",
+    "@types/ws": "^6.0.2",
+    "nodemon": "^1.19.1",
+    "typescript": "^3.5.3"
+  }
+}
