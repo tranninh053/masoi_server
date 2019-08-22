@@ -13,6 +13,23 @@ const server = express()
 
 const wss = new SocketServer({ server });
 
+let ID_ROOM = 0;
+let LIST_ROOM = [];
+
+var CHARACTER;
+Object.defineProperty(exports, "__esModule", { value: true });
+(function (CHARACTER) {
+    CHARACTER[CHARACTER["CHET"] = 0] = "CHET";
+    CHARACTER[CHARACTER["DANG_CHO"] = 1] = "DANG_CHO";
+    CHARACTER[CHARACTER["DAN"] = 2] = "DAN";
+    CHARACTER[CHARACTER["SOI"] = 3] = "SOI";
+    CHARACTER[CHARACTER["BAO_VE"] = 4] = "BAO_VE";
+    CHARACTER[CHARACTER["TIEN_TRI"] = 5] = "TIEN_TRI";
+    CHARACTER[CHARACTER["PHU_THUY"] = 6] = "PHU_THUY";
+    CHARACTER[CHARACTER["BI_NGUYEN"] = 7] = "BI_NGUYEN";
+    CHARACTER[CHARACTER["HOA_SOI"] = 8] = "HOA_SOI";
+})(CHARACTER = exports.CHARACTER || (exports.CHARACTER = {}));
+
 wss.on('connection', (ws) => {
   let isMasterRoom = false;
     let dataRoom
@@ -163,8 +180,182 @@ wss.on('connection', (ws) => {
     })
 });
 
-setInterval(() => {
-  wss.clients.forEach((client) => {
-    client.send(new Date().toTimeString());
+function checkErrorJoinRoom(userName, idRoom) {
+  let indexRoom = getIndexRoom(idRoom);
+  let valueReturn = '';
+  //Check exist room
+  if (indexRoom < 0) {
+      valueReturn = 'Error: Không tồn tại mã phòng: ' + idRoom;
+  } else  if (checkExistUserName(userName, indexRoom) === true) {
+      //Check exist username
+      valueReturn = 'Error: Đã tồn tại tên người chơi "' + userName + '" trong phòng ' + idRoom;
+  } else if (LIST_ROOM[indexRoom].status === 2) {
+      //Check room end game
+      valueReturn = 'Error: Room này đã kết thúc game.';
+  } else if (LIST_ROOM[indexRoom].status === 1) {
+      //Check room start game
+      valueReturn = 'Error: Room vào trận.';
+  }
+  return valueReturn;
+}
+
+function getIndexRoom(idRoom) {
+  for (let index = 0; index < LIST_ROOM.length; index++) {
+      const room = LIST_ROOM[index];
+      if (room.id === idRoom) {
+          return index
+      }
+  }
+
+  return -1;
+}
+
+function checkExistUserName(userName, indexRoom) {
+  let room = LIST_ROOM[indexRoom];
+  let valueReturn = false;
+  room.user.forEach(user => {
+      if (user.name === userName) {
+          valueReturn = true;
+          return true;
+      }
   });
-}, 1000);
+
+  return valueReturn;
+}
+
+function userOutGame(userName, indexRoom) {
+  let room = LIST_ROOM[indexRoom];
+  let lstUser = []
+  room.user.forEach(user => {
+      if (user.name !== userName) {
+          let newUser = {
+              userWs: user.userWs,
+              character: user.character,
+              name: user.name
+          }
+          lstUser.push(newUser);
+      }
+  });
+  LIST_ROOM[indexRoom].user = lstUser;
+}
+
+function sortCharracter(indexRoom) {
+
+  let tempSoi = [];
+  let tempBaoVe = [];
+  let tempTienTri = [];
+  let tempPhuThuy = [];
+  let tempBiNguyen = [];
+  let tempHoaSoi = [];
+  let tempDan = [];
+  for (let index = 0; index < LIST_ROOM[indexRoom].user.length; index++) {
+      
+      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.SOI) {
+          tempSoi.push(LIST_ROOM[indexRoom].user[index]);
+      }
+      
+      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.BAO_VE) {
+          tempBaoVe.push(LIST_ROOM[indexRoom].user[index]);
+      }
+
+      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.TIEN_TRI) {
+          tempTienTri.push(LIST_ROOM[indexRoom].user[index]);
+      }
+
+      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.PHU_THUY) {
+          tempPhuThuy.push(LIST_ROOM[indexRoom].user[index]);
+      }
+
+      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.BI_NGUYEN) {
+          tempBiNguyen.push(LIST_ROOM[indexRoom].user[index]);
+      }
+
+      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.HOA_SOI) {
+          tempHoaSoi.push(LIST_ROOM[indexRoom].user[index]);
+      }
+
+      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.DAN) {
+          tempDan.push(LIST_ROOM[indexRoom].user[index]);
+      }
+  }
+
+  
+  let tempUser = [];
+  
+  tempUser = tempUser.concat(tempSoi);
+  tempUser = tempUser.concat(tempBaoVe);
+  tempUser = tempUser.concat(tempTienTri);
+  tempUser = tempUser.concat(tempPhuThuy);
+  tempUser = tempUser.concat(tempBiNguyen);
+  tempUser = tempUser.concat(tempHoaSoi);
+  tempUser = tempUser.concat(tempDan);
+
+  LIST_ROOM[indexRoom].user = tempUser;
+}
+
+function setCharacter(indexRoom
+                   ,slSoi
+                   ,slBaove
+                   ,slTienTri
+                   ,slPhuThuy
+                   ,slBiNguyen
+                   ,slHoaSoi) {
+  
+  //Create Soi
+  for (let index = 0; index < slSoi; index++) {
+      doSetCharacter(indexRoom, CHARACTER.SOI);
+  }
+  //Create Bao Ve
+  for (let index = 0; index < slBaove; index++) {
+      doSetCharacter(indexRoom, CHARACTER.BAO_VE);
+  }
+  //Create Tien Tri
+  for (let index = 0; index < slTienTri; index++) {
+      doSetCharacter(indexRoom, CHARACTER.TIEN_TRI);
+  }
+  //Create Phu Thuy
+  for (let index = 0; index < slPhuThuy; index++) {
+      doSetCharacter(indexRoom, CHARACTER.PHU_THUY);
+  }
+  //Create Bi Nguyen
+  for (let index = 0; index < slBiNguyen; index++) {
+      doSetCharacter(indexRoom, CHARACTER.BI_NGUYEN);
+  }
+  //Create Hoa Soi
+  for (let index = 0; index < slHoaSoi; index++) {
+      doSetCharacter(indexRoom, CHARACTER.HOA_SOI);
+  }
+  //Create dan
+  for (let index = 0; index < LIST_ROOM[indexRoom].user.length; index++) {
+      if (LIST_ROOM[indexRoom].user[index].character <= 1) {
+          LIST_ROOM[indexRoom].user[index].character = CHARACTER.DAN;
+          LIST_ROOM[indexRoom].user[index].userWs.send("character:" + CHARACTER.DAN);
+          console.log(LIST_ROOM[indexRoom].user[index].name + " - " + CHARACTER.DAN);
+      }
+  }
+}
+
+function doSetCharacter(indexRoom, character) {
+  if (isFullCharacter(indexRoom) === false) {
+      while (true) {
+          let indexTemp = Math.floor((Math.random()*LIST_ROOM[indexRoom].user.length));
+          if (LIST_ROOM[indexRoom].user[indexTemp].character <= CHARACTER.DANG_CHO) {
+              LIST_ROOM[indexRoom].user[indexTemp].character = character;
+              LIST_ROOM[indexRoom].user[indexTemp].userWs.send("character:" + character);
+              return;
+          }
+      }
+  }
+}
+
+function isFullCharacter(indexRoom) {
+  let valueReturn = true
+  for (let index = 0; index < LIST_ROOM[indexRoom].user.length; index++) {
+      if (LIST_ROOM[indexRoom].user[index].character <= 1) {
+          valueReturn = false;
+          break;
+      }
+  }
+
+  return valueReturn;
+}
