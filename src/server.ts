@@ -173,7 +173,24 @@ wss.on('connection', (ws: WebSocket) => {
     });
 
     ws.on('close', () => {
-        
+        if (isMasterRoom === true) {
+            let indexRoom = getIndexRoom(idRoom);
+            if (indexRoom >= 0) {
+                // LIST_ROOM[indexRoom].user.forEach(user => {
+                //     user.userWs.send('masterRoomOut: Chủ phòng đã thoát game.');
+                // });
+                // LIST_ROOM[indexRoom].status = 2;
+            }
+        } else {
+            let indexRoom = getIndexRoom(idRoom);
+            if (indexRoom >= 0 && LIST_ROOM[indexRoom].status === STATUS_GAME.DANG_CHO) {
+                userOutGame(userName, indexRoom);
+                LIST_ROOM[indexRoom].master.send('listmember:' + JSON.stringify(LIST_ROOM[indexRoom].user));
+                LIST_ROOM[indexRoom].user.forEach(user => {
+                    user.userWs.send('listmember:' + JSON.stringify(LIST_ROOM[indexRoom].user));
+                });
+            }
+        }
     })
 });
 
