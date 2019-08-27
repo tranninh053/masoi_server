@@ -24,3 +24,9 @@ export enum CHARACTER {
     BI_NGUYEN = 7,
     HOA_SOI = 8
 }
+
+export enum STATUS_GAME {
+    DANG_CHO = 0,
+    DA_VAO_GAME = 1,
+    DA_DONG_GAME = 2
+}
