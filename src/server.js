@@ -1,52 +1,38 @@
-'use strict';
+import * as express from 'express';
+import * as http from 'http';
+import * as WebSocket from 'ws';
+import { AddressInfo } from 'net';
+import { user, dataRoom, CHARACTER, STATUS_GAME } from './data';
 
-const express = require('express');
-const SocketServer = require('ws').Server;
-const path = require('path');
+const app = express();
 
-const PORT = process.env.PORT || 3000;
-const INDEX = path.join(__dirname, 'index.html');
+//initialize a simple http server
+const server = http.createServer(app);
 
-const server = express()
-  .use((req, res) => res.sendFile(INDEX) )
-  .listen(PORT, () => console.log(`Listening on ${ PORT }`));
+//initialize the WebSocket server instance
+const wss = new WebSocket.Server({ server });
 
-const wss = new SocketServer({ server });
+let ID_ROOM: number = 0;
+let LIST_ROOM: dataRoom[] = [];
 
-let ID_ROOM = 0;
-let LIST_ROOM = [];
+wss.on('connection', (ws: WebSocket) => {
 
-var CHARACTER;
-Object.defineProperty(exports, "__esModule", { value: true });
-(function (CHARACTER) {
-    CHARACTER[CHARACTER["CHET"] = 0] = "CHET";
-    CHARACTER[CHARACTER["DANG_CHO"] = 1] = "DANG_CHO";
-    CHARACTER[CHARACTER["DAN"] = 2] = "DAN";
-    CHARACTER[CHARACTER["SOI"] = 3] = "SOI";
-    CHARACTER[CHARACTER["BAO_VE"] = 4] = "BAO_VE";
-    CHARACTER[CHARACTER["TIEN_TRI"] = 5] = "TIEN_TRI";
-    CHARACTER[CHARACTER["PHU_THUY"] = 6] = "PHU_THUY";
-    CHARACTER[CHARACTER["BI_NGUYEN"] = 7] = "BI_NGUYEN";
-    CHARACTER[CHARACTER["HOA_SOI"] = 8] = "HOA_SOI";
-})(CHARACTER = exports.CHARACTER || (exports.CHARACTER = {}));
-
-wss.on('connection', (ws) => {
-  let isMasterRoom = false;
-    let dataRoom
-    let slSoi;
-    let slBaove;
-    let slTienTri;
-    let slPhuThuy;
-    let slBiNguyen;
-    let slHoaSoi;
+    let isMasterRoom: boolean = false;
+    let dataRoom: dataRoom
+    let slSoi: number;
+    let slBaove: number;
+    let slTienTri: number;
+    let slPhuThuy: number;
+    let slBiNguyen: number;
+    let slHoaSoi: number;
 
     //Data user
-    let userName = '';
-    let idRoom = 0;
-    let dataUser;
+    let userName: string = '';
+    let idRoom: number = 0;
+    let dataUser: user;
 
     //connection is up, let's add a simple simple event
-    ws.on('message', (message) => {
+    ws.on('message', (message: string) => {
         // CREATE ROOM
         const createRoomRegex = /^create_room\:/;
         if (createRoomRegex.test(message)) {
@@ -87,7 +73,7 @@ wss.on('connection', (ws) => {
                 slHoaSoi = Number(data[5]);
                 ws.send('OK');
             }
-
+            
             //Get info room
             const infoRoomRegex = /^info_room\:/;
             if (infoRoomRegex.test(message)) {
@@ -107,7 +93,17 @@ wss.on('connection', (ws) => {
                 let indexRoom = getIndexRoom(idRoom);
                 setCharacter(indexRoom, slSoi,slBaove,slTienTri,slPhuThuy,slBiNguyen,slHoaSoi);
                 sortCharracter(indexRoom);
+                LIST_ROOM[indexRoom].status = 1;
                 ws.send('listmember:' + JSON.stringify(LIST_ROOM[indexRoom].user));
+            }
+
+            //End Game
+            const endGameRegex = /^end_game\:/;
+            if (endGameRegex.test(message)) {
+                //message = message.replace(updateRoomRegex, '');
+                //let data = message.split(",");
+                //slSoi = Number(data[0]);
+                ws.send('end_game:');
             }
         } else {
             // Join Room
@@ -129,7 +125,7 @@ wss.on('connection', (ws) => {
                         name: userName
                     }
 
-                    let indexRoom = getIndexRoom(idRoom);
+                    let indexRoom: number = getIndexRoom(idRoom);
 
                     LIST_ROOM[indexRoom].user.push(dataUser);
 
@@ -145,8 +141,8 @@ wss.on('connection', (ws) => {
             const getListMemberRegex = /^get_list_member\:/;
             if (getListMemberRegex.test(message)) {
                 message = message.replace(getListMemberRegex, '');
-                let idRoom = Number(message);
-                let indexRoom = getIndexRoom(idRoom);
+                let idRoom: number = Number(message);
+                let indexRoom: number = getIndexRoom(idRoom);
                 if (indexRoom >= 0) {
                     LIST_ROOM[indexRoom].master.send('listmember:' + JSON.stringify(LIST_ROOM[indexRoom].user));
                     LIST_ROOM[indexRoom].user.forEach(user => {
@@ -154,6 +150,25 @@ wss.on('connection', (ws) => {
                     });
                 }
             }
+
+            const lay_baiRegex = /^lay_bai\:/;
+            if (lay_baiRegex.test(message)) {
+                message = message.replace(lay_baiRegex, '');
+                let data = message.split(",");
+                userName = data[0];
+                idRoom = Number(data[1]);
+                let indexRoom: number = getIndexRoom(idRoom);
+                if (indexRoom >= 0) {
+                    if (LIST_ROOM[indexRoom].status === STATUS_GAME.DA_VAO_GAME) {
+                        let indexUser = LIST_ROOM[indexRoom].user.findIndex(user => user.name === userName);
+                        ws.send('character:' + LIST_ROOM[indexRoom].user[indexUser].character);
+                    } else {
+                        ws.send('Error: Game chưa bắt đầu.');
+                    }
+                    
+                }
+            }
+
         }
     });
 
@@ -161,201 +176,207 @@ wss.on('connection', (ws) => {
         if (isMasterRoom === true) {
             let indexRoom = getIndexRoom(idRoom);
             if (indexRoom >= 0) {
-                LIST_ROOM[indexRoom].user.forEach(user => {
-                    user.userWs.send('masterRoomOut: Chủ phòng đã thoát game.');
-                });
-                LIST_ROOM[indexRoom].status = 2;
+                // LIST_ROOM[indexRoom].user.forEach(user => {
+                //     user.userWs.send('masterRoomOut: Chủ phòng đã thoát game.');
+                // });
+                // LIST_ROOM[indexRoom].status = 2;
             }
         } else {
             let indexRoom = getIndexRoom(idRoom);
-            if (indexRoom >= 0) {
+            if (indexRoom >= 0 && LIST_ROOM[indexRoom].status === STATUS_GAME.DANG_CHO) {
                 userOutGame(userName, indexRoom);
                 LIST_ROOM[indexRoom].master.send('listmember:' + JSON.stringify(LIST_ROOM[indexRoom].user));
                 LIST_ROOM[indexRoom].user.forEach(user => {
                     user.userWs.send('listmember:' + JSON.stringify(LIST_ROOM[indexRoom].user));
                 });
             }
-            
         }
     })
 });
 
-function checkErrorJoinRoom(userName, idRoom) {
-  let indexRoom = getIndexRoom(idRoom);
-  let valueReturn = '';
-  //Check exist room
-  if (indexRoom < 0) {
-      valueReturn = 'Error: Không tồn tại mã phòng: ' + idRoom;
-  } else  if (checkExistUserName(userName, indexRoom) === true) {
-      //Check exist username
-      valueReturn = 'Error: Đã tồn tại tên người chơi "' + userName + '" trong phòng ' + idRoom;
-  } else if (LIST_ROOM[indexRoom].status === 2) {
-      //Check room end game
-      valueReturn = 'Error: Room này đã kết thúc game.';
-  } else if (LIST_ROOM[indexRoom].status === 1) {
-      //Check room start game
-      valueReturn = 'Error: Room vào trận.';
-  }
-  return valueReturn;
+function checkErrorJoinRoom(userName: string, idRoom: number): string {
+    let indexRoom = getIndexRoom(idRoom);
+    let valueReturn: string = '';
+    //Check exist room
+    if (indexRoom < 0) {
+        valueReturn = 'Error: Không tồn tại mã phòng: ' + idRoom;
+    } else  if (checkExistUserName(userName, indexRoom) === true) {
+        //Check exist username
+        valueReturn = 'Error: Đã tồn tại tên người chơi "' + userName + '" trong phòng ' + idRoom;
+    } else if (LIST_ROOM[indexRoom].status === 2) {
+        //Check room end game
+        valueReturn = 'Error: Room này đã kết thúc game.';
+    } else if (LIST_ROOM[indexRoom].status === 1) {
+        //Check room start game
+        valueReturn = 'Error: Room vào trận.';
+    }
+    return valueReturn;
 }
 
-function getIndexRoom(idRoom) {
-  for (let index = 0; index < LIST_ROOM.length; index++) {
-      const room = LIST_ROOM[index];
-      if (room.id === idRoom) {
-          return index
-      }
-  }
+function getIndexRoom(idRoom: number): number {
+    for (let index = 0; index < LIST_ROOM.length; index++) {
+        const room = LIST_ROOM[index];
+        if (room.id === idRoom) {
+            return index
+        }
+    }
 
-  return -1;
+    return -1;
 }
 
-function checkExistUserName(userName, indexRoom) {
-  let room = LIST_ROOM[indexRoom];
-  let valueReturn = false;
-  room.user.forEach(user => {
-      if (user.name === userName) {
-          valueReturn = true;
-          return true;
-      }
-  });
+function checkExistUserName(userName: string, indexRoom: number): boolean {
+    let room = LIST_ROOM[indexRoom];
+    let valueReturn: boolean = false;
+    room.user.forEach(user => {
+        if (user.name === userName) {
+            valueReturn = true;
+            return true;
+        }
+    });
 
-  return valueReturn;
+    return valueReturn;
 }
 
-function userOutGame(userName, indexRoom) {
-  let room = LIST_ROOM[indexRoom];
-  let lstUser = []
-  room.user.forEach(user => {
-      if (user.name !== userName) {
-          let newUser = {
-              userWs: user.userWs,
-              character: user.character,
-              name: user.name
-          }
-          lstUser.push(newUser);
-      }
-  });
-  LIST_ROOM[indexRoom].user = lstUser;
+function userOutGame(userName: string, indexRoom: number) {
+    let room = LIST_ROOM[indexRoom];
+    let lstUser: user[] = []
+    room.user.forEach(user => {
+        if (user.name !== userName) {
+            let newUser: user = {
+                userWs: user.userWs,
+                character: user.character,
+                name: user.name
+            }
+            lstUser.push(newUser);
+        }
+    });
+    LIST_ROOM[indexRoom].user = lstUser;
 }
 
-function sortCharracter(indexRoom) {
+function sortCharracter(indexRoom: number) {
 
-  let tempSoi = [];
-  let tempBaoVe = [];
-  let tempTienTri = [];
-  let tempPhuThuy = [];
-  let tempBiNguyen = [];
-  let tempHoaSoi = [];
-  let tempDan = [];
-  for (let index = 0; index < LIST_ROOM[indexRoom].user.length; index++) {
-      
-      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.SOI) {
-          tempSoi.push(LIST_ROOM[indexRoom].user[index]);
-      }
-      
-      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.BAO_VE) {
-          tempBaoVe.push(LIST_ROOM[indexRoom].user[index]);
-      }
+    let tempSoi: user[] = [];
+    let tempBaoVe: user[] = [];
+    let tempTienTri: user[] = [];
+    let tempPhuThuy: user[] = [];
+    let tempBiNguyen: user[] = [];
+    let tempHoaSoi: user[] = [];
+    let tempDan: user[] = [];
+    for (let index = 0; index < LIST_ROOM[indexRoom].user.length; index++) {
+        
+        if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.SOI) {
+            tempSoi.push(LIST_ROOM[indexRoom].user[index]);
+        }
+        
+        if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.BAO_VE) {
+            tempBaoVe.push(LIST_ROOM[indexRoom].user[index]);
+        }
 
-      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.TIEN_TRI) {
-          tempTienTri.push(LIST_ROOM[indexRoom].user[index]);
-      }
+        if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.TIEN_TRI) {
+            tempTienTri.push(LIST_ROOM[indexRoom].user[index]);
+        }
 
-      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.PHU_THUY) {
-          tempPhuThuy.push(LIST_ROOM[indexRoom].user[index]);
-      }
+        if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.PHU_THUY) {
+            tempPhuThuy.push(LIST_ROOM[indexRoom].user[index]);
+        }
 
-      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.BI_NGUYEN) {
-          tempBiNguyen.push(LIST_ROOM[indexRoom].user[index]);
-      }
+        if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.BI_NGUYEN) {
+            tempBiNguyen.push(LIST_ROOM[indexRoom].user[index]);
+        }
 
-      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.HOA_SOI) {
-          tempHoaSoi.push(LIST_ROOM[indexRoom].user[index]);
-      }
+        if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.HOA_SOI) {
+            tempHoaSoi.push(LIST_ROOM[indexRoom].user[index]);
+        }
 
-      if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.DAN) {
-          tempDan.push(LIST_ROOM[indexRoom].user[index]);
-      }
-  }
+        if (LIST_ROOM[indexRoom].user[index].character === CHARACTER.DAN) {
+            tempDan.push(LIST_ROOM[indexRoom].user[index]);
+        }
+    }
 
-  
-  let tempUser = [];
-  
-  tempUser = tempUser.concat(tempSoi);
-  tempUser = tempUser.concat(tempBaoVe);
-  tempUser = tempUser.concat(tempTienTri);
-  tempUser = tempUser.concat(tempPhuThuy);
-  tempUser = tempUser.concat(tempBiNguyen);
-  tempUser = tempUser.concat(tempHoaSoi);
-  tempUser = tempUser.concat(tempDan);
+    
+    let tempUser: user[] = [];
+    
+    tempUser = tempUser.concat(tempSoi);
+    tempUser = tempUser.concat(tempBaoVe);
+    tempUser = tempUser.concat(tempTienTri);
+    tempUser = tempUser.concat(tempPhuThuy);
+    tempUser = tempUser.concat(tempBiNguyen);
+    tempUser = tempUser.concat(tempHoaSoi);
+    tempUser = tempUser.concat(tempDan);
 
-  LIST_ROOM[indexRoom].user = tempUser;
+    LIST_ROOM[indexRoom].user = tempUser;
 }
 
-function setCharacter(indexRoom
-                   ,slSoi
-                   ,slBaove
-                   ,slTienTri
-                   ,slPhuThuy
-                   ,slBiNguyen
-                   ,slHoaSoi) {
-  
-  //Create Soi
-  for (let index = 0; index < slSoi; index++) {
-      doSetCharacter(indexRoom, CHARACTER.SOI);
-  }
-  //Create Bao Ve
-  for (let index = 0; index < slBaove; index++) {
-      doSetCharacter(indexRoom, CHARACTER.BAO_VE);
-  }
-  //Create Tien Tri
-  for (let index = 0; index < slTienTri; index++) {
-      doSetCharacter(indexRoom, CHARACTER.TIEN_TRI);
-  }
-  //Create Phu Thuy
-  for (let index = 0; index < slPhuThuy; index++) {
-      doSetCharacter(indexRoom, CHARACTER.PHU_THUY);
-  }
-  //Create Bi Nguyen
-  for (let index = 0; index < slBiNguyen; index++) {
-      doSetCharacter(indexRoom, CHARACTER.BI_NGUYEN);
-  }
-  //Create Hoa Soi
-  for (let index = 0; index < slHoaSoi; index++) {
-      doSetCharacter(indexRoom, CHARACTER.HOA_SOI);
-  }
-  //Create dan
-  for (let index = 0; index < LIST_ROOM[indexRoom].user.length; index++) {
-      if (LIST_ROOM[indexRoom].user[index].character <= 1) {
-          LIST_ROOM[indexRoom].user[index].character = CHARACTER.DAN;
-          LIST_ROOM[indexRoom].user[index].userWs.send("character:" + CHARACTER.DAN);
-          console.log(LIST_ROOM[indexRoom].user[index].name + " - " + CHARACTER.DAN);
-      }
-  }
+function setCharacter(indexRoom: number
+                     ,slSoi: number
+                     ,slBaove: number
+                     ,slTienTri: number
+                     ,slPhuThuy: number
+                     ,slBiNguyen: number
+                     ,slHoaSoi: number) {
+    
+    //Create Soi
+    for (let index = 0; index < slSoi; index++) {
+        doSetCharacter(indexRoom, CHARACTER.SOI);
+    }
+    //Create Bao Ve
+    for (let index = 0; index < slBaove; index++) {
+        doSetCharacter(indexRoom, CHARACTER.BAO_VE);
+    }
+    //Create Tien Tri
+    for (let index = 0; index < slTienTri; index++) {
+        doSetCharacter(indexRoom, CHARACTER.TIEN_TRI);
+    }
+    //Create Phu Thuy
+    for (let index = 0; index < slPhuThuy; index++) {
+        doSetCharacter(indexRoom, CHARACTER.PHU_THUY);
+    }
+    //Create Bi Nguyen
+    for (let index = 0; index < slBiNguyen; index++) {
+        doSetCharacter(indexRoom, CHARACTER.BI_NGUYEN);
+    }
+    //Create Hoa Soi
+    for (let index = 0; index < slHoaSoi; index++) {
+        doSetCharacter(indexRoom, CHARACTER.HOA_SOI);
+    }
+    //Create dan
+    for (let index = 0; index < LIST_ROOM[indexRoom].user.length; index++) {
+        if (LIST_ROOM[indexRoom].user[index].character <= 1) {
+            LIST_ROOM[indexRoom].user[index].character = CHARACTER.DAN;
+            LIST_ROOM[indexRoom].user[index].userWs.send("character:" + CHARACTER.DAN);
+            console.log(LIST_ROOM[indexRoom].user[index].name + " - " + CHARACTER.DAN);
+        }
+    }
 }
 
-function doSetCharacter(indexRoom, character) {
-  if (isFullCharacter(indexRoom) === false) {
-      while (true) {
-          let indexTemp = Math.floor((Math.random()*LIST_ROOM[indexRoom].user.length));
-          if (LIST_ROOM[indexRoom].user[indexTemp].character <= CHARACTER.DANG_CHO) {
-              LIST_ROOM[indexRoom].user[indexTemp].character = character;
-              LIST_ROOM[indexRoom].user[indexTemp].userWs.send("character:" + character);
-              return;
-          }
-      }
-  }
+function doSetCharacter(indexRoom: number, character: number) {
+    if (isFullCharacter(indexRoom) === false) {
+        while (true) {
+            let indexTemp = Math.floor((Math.random()*LIST_ROOM[indexRoom].user.length));
+            if (LIST_ROOM[indexRoom].user[indexTemp].character <= CHARACTER.DANG_CHO) {
+                LIST_ROOM[indexRoom].user[indexTemp].character = character;
+                LIST_ROOM[indexRoom].user[indexTemp].userWs.send("character:" + character);
+                return;
+            }
+        }
+    }
 }
 
-function isFullCharacter(indexRoom) {
-  let valueReturn = true
-  for (let index = 0; index < LIST_ROOM[indexRoom].user.length; index++) {
-      if (LIST_ROOM[indexRoom].user[index].character <= 1) {
-          valueReturn = false;
-          break;
-      }
-  }
+function isFullCharacter(indexRoom: number): boolean {
+    let valueReturn: boolean = true
+    for (let index = 0; index < LIST_ROOM[indexRoom].user.length; index++) {
+        if (LIST_ROOM[indexRoom].user[index].character <= 1) {
+            valueReturn = false;
+            break;
+        }
+    }
 
-  return valueReturn;
+    return valueReturn;
 }
+
+//start our server
+server.listen(process.env.PORT || 8999, () => {
+    const { port } = server.address() as AddressInfo;
+    
+    console.log(`Server started on port: ` + (server.address() as AddressInfo).port);
+});
